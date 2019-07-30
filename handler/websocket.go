@@ -183,6 +183,7 @@ func (c *wsConnection) keepAlive(ctx context.Context) {
 		case <-c.keepAliveTicker.C:
 			err := c.write(&operationMessage{Type: connectionKeepAliveMsg})
 			if err != nil {
+				fmt.Print("keepAlive > terminated")
 				c.keepAliveTicker.Stop()
 				c.close(websocket.CloseNormalClosure, "terminated")
 				return
