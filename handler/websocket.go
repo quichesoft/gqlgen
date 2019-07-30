@@ -102,7 +102,7 @@ func (c *wsConnection) init() bool {
 			}
 		}
 
-		c.write(&operationMessage{Type: connectionAckMsg})
+		_ = c.write(&operationMessage{Type: connectionAckMsg})
 	case connectionTerminateMsg:
 		c.close(websocket.CloseNormalClosure, "terminated")
 		return false
@@ -115,10 +115,12 @@ func (c *wsConnection) init() bool {
 	return true
 }
 
-func (c *wsConnection) write(msg *operationMessage) {
+func (c *wsConnection) write(msg *operationMessage) error {
 	c.mu.Lock()
-	c.conn.WriteJSON(msg)
+	err := c.conn.WriteJSON(msg)
 	c.mu.Unlock()
+
+	return err
 }
 
 func (c *wsConnection) run() {
@@ -170,7 +172,7 @@ func (c *wsConnection) run() {
 
 func (c *wsConnection) keepAlive(ctx context.Context) {
 	if c.cfg.connectionKeepAliveFirstInstantly {
-		c.write(&operationMessage{Type: connectionKeepAliveMsg})
+		_ = c.write(&operationMessage{Type: connectionKeepAliveMsg})
 	}
 
 	for {
@@ -179,7 +181,12 @@ func (c *wsConnection) keepAlive(ctx context.Context) {
 			c.keepAliveTicker.Stop()
 			return
 		case <-c.keepAliveTicker.C:
-			c.write(&operationMessage{Type: connectionKeepAliveMsg})
+			err := c.write(&operationMessage{Type: connectionKeepAliveMsg})
+			if err != nil {
+				c.keepAliveTicker.Stop()
+				c.close(websocket.CloseNormalClosure, "terminated")
+				return
+			}
 		}
 	}
 }
@@ -241,7 +248,7 @@ func (c *wsConnection) subscribe(message *operationMessage) bool {
 		}
 
 		c.sendData(message.ID, result)
-		c.write(&operationMessage{ID: message.ID, Type: completeMsg})
+		_ = c.write(&operationMessage{ID: message.ID, Type: completeMsg})
 		return true
 	}
 
@@ -261,7 +268,7 @@ func (c *wsConnection) subscribe(message *operationMessage) bool {
 			c.sendData(message.ID, result)
 		}
 
-		c.write(&operationMessage{ID: message.ID, Type: completeMsg})
+		_ = c.write(&operationMessage{ID: message.ID, Type: completeMsg})
 
 		c.mu.Lock()
 		delete(c.active, message.ID)
@@ -279,7 +286,7 @@ func (c *wsConnection) sendData(id string, response *graphql.Response) {
 		return
 	}
 
-	c.write(&operationMessage{Type: dataMsg, ID: id, Payload: b})
+	_ = c.write(&operationMessage{Type: dataMsg, ID: id, Payload: b})
 }
 
 func (c *wsConnection) sendError(id string, errors ...*gqlerror.Error) {
@@ -291,7 +298,7 @@ func (c *wsConnection) sendError(id string, errors ...*gqlerror.Error) {
 	if err != nil {
 		panic(err)
 	}
-	c.write(&operationMessage{Type: errorMsg, ID: id, Payload: b})
+	_ = c.write(&operationMessage{Type: errorMsg, ID: id, Payload: b})
 }
 
 func (c *wsConnection) sendConnectionError(format string, args ...interface{}) {
@@ -300,7 +307,7 @@ func (c *wsConnection) sendConnectionError(format string, args ...interface{}) {
 		panic(err)
 	}
 
-	c.write(&operationMessage{Type: connectionErrorMsg, Payload: b})
+	_ = c.write(&operationMessage{Type: connectionErrorMsg, Payload: b})
 }
 
 func (c *wsConnection) readOp() *operationMessage {
